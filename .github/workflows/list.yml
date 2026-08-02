@@ -1,0 +1,33 @@
+name: List Qualities
+
+on:
+  workflow_dispatch:
+    inputs:
+      links:
+        description: "Links, one per line"
+        required: true
+        type: string
+
+jobs:
+  list:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install deps
+        run: pip install requests beautifulsoup4 aiohttp
+
+      - name: List qualities
+        env:
+          LINKS: ${{ inputs.links }}
+        run: python list_qualities.py
+
+      - name: Upload qualities.json
+        uses: actions/upload-artifact@v4
+        with:
+          name: qualities
+          path: qualities.json

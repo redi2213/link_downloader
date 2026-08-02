@@ -1,0 +1,40 @@
+name: Resolve Links
+
+on:
+  workflow_dispatch:
+    inputs:
+      links:
+        description: "Links, one per line (same order as in List Qualities run)"
+        required: true
+        type: string
+      choices:
+        description: "Quality number for each link, comma-separated (e.g. 1,2,1)"
+        required: true
+        type: string
+
+jobs:
+  resolve:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install deps
+        run: pip install requests beautifulsoup4 aiohttp
+
+      - name: Resolve chosen links
+        env:
+          LINKS: ${{ inputs.links }}
+          CHOICES: ${{ inputs.choices }}
+        run: python resolve.py
+
+      - name: Upload resolved.txt
+        uses: actions/upload-artifact@v4
+        with:
+          name: resolved-links
+          path: |
+            resolved.txt
+            failed.txt

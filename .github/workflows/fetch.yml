@@ -1,0 +1,44 @@
+name: Fetch
+
+on:
+  workflow_dispatch:
+    inputs:
+      resolved_links:
+        description: "Direct MP4 link(s) to actually download, one per line"
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+jobs:
+  fetch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install deps
+        run: pip install aiohttp
+
+      - name: Download files
+        env:
+          RESOLVED_LINKS: ${{ inputs.resolved_links }}
+        run: python fetch.py
+
+      - name: Create release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: run-${{ github.run_id }}
+          name: "Downloaded files ${{ github.run_id }}"
+          body: "Downloaded from workflow run ${{ github.run_id }}"
+          files: |
+            downloads/*
+            failed.txt
+
+      - name: Print result URL
+        run: |
+          echo "Release URL: https://github.com/${{ github.repository }}/releases/tag/run-${{ github.run_id }}"
