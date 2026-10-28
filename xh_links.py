@@ -312,8 +312,10 @@ def write_summary(results: list[dict]) -> None:
     path = os.environ.get("GITHUB_STEP_SUMMARY")
     if not path:
         return
-    lines = ["# XHamster Links", ""]
+    lines: list[str] = ["# XHamster Links", ""]
     ok = 0
+    all_links: list[str] = []
+
     for i, item in enumerate(results, 1):
         lines.append(f"## {i}. {item.get('title') or '(no title)'}")
         lines.append(f"- URL: `{item.get('url')}`")
@@ -324,22 +326,40 @@ def write_summary(results: list[dict]) -> None:
             lines.append(f"- **ERROR:** `{item['error']}`")
             lines.append("")
             continue
+
         ok += 1
-        if item.get("m3u8"):
-            lines.append("- HLS:")
-            lines.append("```")
-            lines.append(str(item["m3u8"]))
-            lines.append("```")
-        for q in item.get("qualities") or []:
-            lines.append(f"- **{q.get('quality')}** ({q.get('ext', '')})")
-            lines.append("  ```")
-            lines.append(f"  {q['link']}")
-            lines.append("  ```")
         lines.append("")
+        lines.append("| Quality | Type | ")
+        lines.append("|---------|------|")
+        if item.get("m3u8"):
+            lines.append(f"| HLS master | m3u8 |")
+            all_links.append(f"# HLS master")
+            all_links.append(str(item["m3u8"]))
+        for q in item.get("qualities") or []:
+            qn = q.get("quality") or "?"
+            ext = q.get("ext") or ""
+            lines.append(f"| {qn} | {ext} |")
+            all_links.append(f"# {qn} ({ext})")
+            all_links.append(q["link"])
+        lines.append("")
+
     lines.append("---")
     lines.append(f"**Success:** {ok}/{len(results)}")
+    lines.append("")
+    lines.append("### All links (select the box → Copy)")
+    lines.append("GitHub Summary has no Copy button; use the code block below:")
+    lines.append("```")
+    if all_links:
+        lines.extend(all_links)
+    else:
+        lines.append("(no links)")
+    lines.append("```")
+    lines.append("")
+
     with open(path, "a", encoding="utf-8") as f:
-        f.write("\n".join(lines) + "\n")
+        f.write("
+".join(lines) + "
+")
 
 
 async def main() -> None:
