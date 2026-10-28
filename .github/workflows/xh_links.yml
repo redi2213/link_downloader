@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
     inputs:
       url:
-        description: "xHamster video URL (one link)"
+        description: "xHamster video URL"
         required: false
         type: string
       links:
@@ -12,14 +12,18 @@ on:
         required: false
         type: string
       proxy:
-        description: "Optional override proxy (leave empty to use working_proxies.txt)"
+        description: "Optional single proxy override (socks5://... or http://...)"
+        required: false
+        type: string
+      v2ray_config:
+        description: "Xray/V2Ray FULL JSON config (not vmess:// link). A local SOCKS on 10808 is auto-added."
         required: false
         type: string
 
 jobs:
   extract:
     runs-on: ubuntu-latest
-    timeout-minutes: 25
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
 
@@ -27,29 +31,36 @@ jobs:
         with:
           python-version: "3.12"
 
-      - name: Install deps
+      - name: Install Python deps
         run: |
           set -e
           pip install -U pip setuptools wheel
-          pip install "curl_cffi" "requests" "PySocks"
-          pip uninstall -y xhamster_api unofficial-api-for-xhamster eaf_base_api eaf-base-api 2>/dev/null || true
-          pip install -U "unofficial-api-for-xhamster"
+          pip install curl_cffi requests PySocks
+          pip uninstall -y xhamster_api unofficial-api-for-xhamster 2>/dev/null || true
+          pip install -U unofficial-api-for-xhamster
+          pip install -U yt-dlp
           python - <<'PY'
           import base_api.base as b
           if not hasattr(b, "setup_logger") and hasattr(b, "get_logger"):
               b.setup_logger = b.get_logger
           from xhamster_api import Client
-          print("import OK", Client)
+          print("OK", Client)
           PY
+          yt-dlp --version
 
-      - name: Show proxies from repo
+      - name: Setup Xray from config (optional)
+        env:
+          V2RAY_CONFIG: ${{ inputs.v2ray_config }}
+        run: bash setup_xray.sh
+
+      - name: Prepare proxy list
         run: |
           if [ -n "${{ inputs.proxy }}" ]; then
             echo "${{ inputs.proxy }}" > working_proxies.txt
-            echo "Using manual proxy override"
           fi
+          # Prefer local Xray first: xh_links.py already prioritizes /tmp/xray.pid
           echo "=== working_proxies.txt ==="
-          cat working_proxies.txt 2>/dev/null || echo "(missing)"
+          cat working_proxies.txt 2>/dev/null || echo "(none / only xray if started)"
 
       - name: Extract quality links
         env:
@@ -57,5 +68,3 @@ jobs:
           LINKS: ${{ inputs.links }}
           PROXY: ${{ inputs.proxy }}
         run: python xh_links.py
-
-      # No zip artifact — results are in Job Summary + log
