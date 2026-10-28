@@ -1,0 +1,42 @@
+name: XHamster Links
+
+on:
+  workflow_dispatch:
+    inputs:
+      url:
+        description: "xHamster video URL (one link)"
+        required: false
+        type: string
+      links:
+        description: "Multiple links, one per line (optional if url is set)"
+        required: false
+        type: string
+
+jobs:
+  extract:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install deps
+        run: |
+          pip install -U pip
+          pip install xhamster_api unofficial-api-for-xhamster || pip install xhamster_api
+
+      - name: Extract quality links
+        env:
+          URL: ${{ inputs.url }}
+          LINKS: ${{ inputs.links }}
+        run: python xh_links.py
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: xhamster-links
+          path: |
+            xh_links.json
+            xh_links.txt
