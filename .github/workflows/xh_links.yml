@@ -29,12 +29,25 @@ jobs:
 
       - name: Install deps
         run: |
+          set -e
           pip install -U pip setuptools wheel
-          # install network stack first, then API (avoids broken base_api extras)
-          pip install "curl_cffi" "requests" "PySocks" "beautifulsoup4" "selectolax" "chompjs" "m3u8"
-          pip install "eaf_base_api" || pip install "base-api" || true
-          pip install -U "xhamster_api" || pip install -U "unofficial-api-for-xhamster"
-          python -c "from xhamster_api import Client; print('xhamster_api OK', Client)"
+          pip install "curl_cffi" "requests" "PySocks"
+
+          # Old PyPI name xhamster_api==2.2 is incompatible with new eaf_base_api
+          # (imports setup_logger which was renamed to get_logger).
+          # Prefer the maintained package:
+          pip uninstall -y xhamster_api unofficial-api-for-xhamster eaf_base_api eaf-base-api 2>/dev/null || true
+          pip install -U "unofficial-api-for-xhamster"
+
+          python - <<'PY'
+          import base_api.base as b
+          # compatibility shim for any leftover old imports
+          if not hasattr(b, "setup_logger") and hasattr(b, "get_logger"):
+              b.setup_logger = b.get_logger
+              print("shim: setup_logger -> get_logger")
+          from xhamster_api import Client
+          print("import OK", Client)
+          PY
 
       - name: Show proxies from repo
         run: |
