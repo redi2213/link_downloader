@@ -1,19 +1,54 @@
 #!/usr/bin/env python3
 """
 xHamster quality links extractor.
-- Interactive (Termux): just run python xh_links.py
-- GitHub Actions: set env URL or LINKS (one URL per line)
+- Interactive (Termux): python xh_links.py
+- GitHub Actions: set URL or LINKS; optional PROXY secret for datacenter IP blocks
 """
 
 import os
 import re
 import json
 import asyncio
-from xhamster_api import Client
+
+
+def make_client():
+    """Build Client with optional proxy from env PROXY / HTTP_PROXY / HTTPS_PROXY."""
+    from xhamster_api import Client
+
+    proxy = (
+        os.environ.get("PROXY")
+        or os.environ.get("HTTPS_PROXY")
+        or os.environ.get("HTTP_PROXY")
+        or ""
+    ).strip()
+
+    if not proxy:
+        return Client()
+
+    try:
+        from base_api.modules.config import RuntimeConfig
+        from base_api.base import BaseCore
+    except ImportError:
+        try:
+            from base_api.modules.config import config as cfg
+            from base_api import BaseCore
+            cfg.proxies = {"http": proxy, "https": proxy}
+            cfg.trust_env = True
+            return Client(core=BaseCore(config=cfg))
+        except Exception:
+            return Client()
+
+    cfg = RuntimeConfig()
+    cfg.proxies = {"http": proxy, "https": proxy}
+    cfg.trust_env = True
+    # Better chance against bot checks from cloud IPs
+    cfg.impersonation = os.environ.get("IMPERSONATE", "chrome")
+    core = BaseCore(config=cfg)
+    return Client(core=core)
 
 
 async def process_url(url: str) -> dict:
-    client = Client()
+    client = make_client()
     video = await client.get_video(url)
 
     title = getattr(video, "title", None) or "unknown"
@@ -74,7 +109,6 @@ def print_result(data: dict, index: int | None = None):
 
 
 async def main():
-    # Prefer env (Actions). Fall back to interactive input.
     raw = os.environ.get("URL") or os.environ.get("LINKS") or ""
     urls = [x.strip() for x in raw.splitlines() if x.strip()]
 
@@ -89,6 +123,19 @@ async def main():
     if not urls:
         print("No URL provided. Set URL/LINKS env or pass interactively.")
         return
+
+    proxy = (
+        os.environ.get("PROXY")
+        or os.environ.get("HTTPS_PROXY")
+        or os.environ.get("HTTP_PROXY")
+        or ""
+    ).strip()
+    if proxy:
+        # mask credentials in logs
+        safe = re.sub(r":([^:@/]+)@", ":***@", proxy)
+        print(f"Using proxy: {safe}")
+    else:
+        print("No proxy set (GitHub Actions IPs are often blocked by xHamster).")
 
     print(f"Processing {len(urls)} link(s)...\n")
     results = []
@@ -109,11 +156,9 @@ async def main():
         print()
         results.append(data)
 
-    # Machine-readable output for Actions / download managers
     with open("xh_links.json", "w", encoding="utf-8") as f:
         json.dump(results, f, ensure_ascii=False, indent=2)
 
-    # Flat text of all quality links
     with open("xh_links.txt", "w", encoding="utf-8") as f:
         for item in results:
             f.write(f"# {item.get('title') or item['url']}\n")
