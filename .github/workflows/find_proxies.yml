@@ -6,18 +6,21 @@ on:
       needed:
         description: "Stop after this many working proxies"
         required: false
-        default: "5"
+        default: "8"
         type: string
       max_candidates:
         description: "Max proxies to test from free lists"
         required: false
-        default: "80"
+        default: "100"
         type: string
       xh_check:
         description: "Also test opening xhamster.com (1=yes, 0=no)"
         required: false
         default: "0"
         type: string
+
+permissions:
+  contents: write
 
 jobs:
   find:
@@ -44,7 +47,36 @@ jobs:
           MAX_WORKERS: "20"
         run: python find_proxies.py
 
-      - name: Upload proxy list
+      - name: Commit working proxies to repo
+        run: |
+          if [ ! -s working_proxies.txt ]; then
+            echo "No working proxies found — skip commit"
+            exit 0
+          fi
+
+          # Keep a short header so the file is self-explanatory
+          {
+            echo "# Auto-updated by Find Free Proxies workflow"
+            echo "# Updated: $(date -u +%Y-%m-%dT%H:%M:%SZ)"
+            echo "# Format: socks5://ip:port  or  http://ip:port"
+            grep -v '^#' working_proxies.txt | sed '/^$/d'
+          } > working_proxies.tmp
+          mv working_proxies.tmp working_proxies.txt
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          git add working_proxies.txt working_proxies.json || true
+
+          if git diff --cached --quiet; then
+            echo "No changes to commit"
+            exit 0
+          fi
+
+          git commit -m "chore: update working free proxies ($(wc -l < working_proxies.txt | tr -d ' ') lines)"
+          git push
+
+      - name: Upload artifact (backup)
         if: always()
         uses: actions/upload-artifact@v4
         with:
