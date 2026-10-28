@@ -12,6 +12,27 @@ import json
 import asyncio
 
 
+def _compat_base_api() -> None:
+    """Old xhamster_api imports setup_logger; new base_api renamed it to get_logger."""
+    try:
+        import base_api.base as b
+
+        if not hasattr(b, "setup_logger") and hasattr(b, "get_logger"):
+            b.setup_logger = b.get_logger  # type: ignore[attr-defined]
+        if not hasattr(b, "Helper"):
+            try:
+                from base_api import Helper as H  # type: ignore
+
+                b.Helper = H  # type: ignore[attr-defined]
+            except Exception:
+                pass
+    except Exception:
+        pass
+
+
+_compat_base_api()
+
+
 def load_proxies() -> list[str]:
     proxies: list[str] = []
     one = (os.environ.get("PROXY") or "").strip()
@@ -36,7 +57,6 @@ def load_proxies() -> list[str]:
 
 
 def apply_proxy_env(proxy: str | None) -> None:
-    """Set process env so curl_cffi / httpx / requests can pick proxy up."""
     for k in ("HTTP_PROXY", "HTTPS_PROXY", "ALL_PROXY", "http_proxy", "https_proxy", "all_proxy"):
         os.environ.pop(k, None)
     if not proxy:
@@ -50,15 +70,13 @@ def apply_proxy_env(proxy: str | None) -> None:
 
 
 def make_client(proxy: str | None = None):
-    """Build xhamster Client. Prefer env proxy; optionally configure base_api."""
     apply_proxy_env(proxy)
-
+    _compat_base_api()
     from xhamster_api import Client
 
     if not proxy:
         return Client()
 
-    # Try official base_api config path (versions differ; fail soft)
     try:
         from base_api.modules.config import config as cfg  # type: ignore
 
@@ -86,8 +104,6 @@ async def process_url(url: str, proxy: str | None = None) -> dict:
     title = getattr(video, "title", None) or "unknown"
     max_res = getattr(video, "max_resolution", None)
     m3u8 = getattr(video, "m3u8_base_url", None)
-
-    # some versions use different attr names
     if not m3u8:
         m3u8 = getattr(video, "m3u8", None) or getattr(video, "hls", None)
 
@@ -102,10 +118,7 @@ async def process_url(url: str, proxy: str | None = None) -> dict:
     }
 
     if not m3u8:
-        # last resort: dump useful attrs for debugging
-        attrs = [a for a in dir(video) if not a.startswith("_")]
         result["error"] = "m3u8 not found"
-        result["debug_attrs"] = attrs[:40]
         return result
 
     matches = re.findall(r"(\d+x\d+):(\d+p)", str(m3u8))
