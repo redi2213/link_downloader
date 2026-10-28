@@ -8,13 +8,18 @@ on:
         required: false
         type: string
       links:
-        description: "Multiple links, one per line (optional if url is set)"
+        description: "Multiple links, one per line"
+        required: false
+        type: string
+      proxy:
+        description: "Optional single proxy (socks5://ip:port or http://ip:port). Leave empty to use artifact from Find Free Proxies"
         required: false
         type: string
 
 jobs:
   extract:
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
 
@@ -25,17 +30,36 @@ jobs:
       - name: Install deps
         run: |
           pip install -U pip
+          pip install requests PySocks
           pip install "xhamster_api" || pip install "unofficial-api-for-xhamster"
+
+      # Try to pull latest working-proxies artifact from Find Free Proxies workflow
+      - name: Download latest free-proxy artifact
+        if: ${{ inputs.proxy == '' }}
+        continue-on-error: true
+        uses: dawidd6/action-download-artifact@v6
+        with:
+          workflow: find_proxies.yml
+          name: working-proxies
+          path: .
+          search_artifacts: true
+          workflow_conclusion: success
+          github_token: ${{ github.token }}
+
+      - name: Show proxy file
+        run: |
+          if [ -n "${{ inputs.proxy }}" ]; then
+            echo "${{ inputs.proxy }}" > working_proxies.txt
+            echo "Using manual proxy input"
+          fi
+          echo "--- working_proxies.txt ---"
+          cat working_proxies.txt 2>/dev/null || echo "(no proxy file — will likely fail on GA IPs)"
 
       - name: Extract quality links
         env:
           URL: ${{ inputs.url }}
           LINKS: ${{ inputs.links }}
-          # Put a residential/mobile proxy in repo Secret named PROXY
-          # Examples: http://user:pass@host:port  or  socks5://user:pass@host:port
-          PROXY: ${{ secrets.PROXY }}
-          HTTP_PROXY: ${{ secrets.PROXY }}
-          HTTPS_PROXY: ${{ secrets.PROXY }}
+          PROXY: ${{ inputs.proxy }}
         run: python xh_links.py
 
       - name: Upload artifacts
@@ -46,3 +70,4 @@ jobs:
           path: |
             xh_links.json
             xh_links.txt
+            working_proxies.txt
