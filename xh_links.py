@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
 """
 xHamster quality links extractor.
-- Interactive (Termux): python xh_links.py
-- Actions: URL/LINKS env; tries proxies from PROXY env or working_proxies.txt
+Uses working_proxies.txt from repo (or PROXY env).
 """
+
+from __future__ import annotations
 
 import os
 import re
@@ -12,22 +13,21 @@ import asyncio
 
 
 def load_proxies() -> list[str]:
-    proxies = []
-    # 1) single PROXY env
+    proxies: list[str] = []
     one = (os.environ.get("PROXY") or "").strip()
     if one:
         proxies.append(one)
-    # 2) file produced by Find Free Proxies workflow / local
     for path in ("working_proxies.txt", "proxies.txt"):
-        if os.path.isfile(path):
-            with open(path, encoding="utf-8") as f:
-                for line in f:
-                    line = line.strip()
-                    if line and not line.startswith("#"):
-                        proxies.append(line)
-    # unique keep order
-    seen = set()
-    out = []
+        if not os.path.isfile(path):
+            continue
+        with open(path, encoding="utf-8") as f:
+            for line in f:
+                line = line.strip()
+                if not line or line.startswith("#"):
+                    continue
+                proxies.append(line)
+    seen: set[str] = set()
+    out: list[str] = []
     for p in proxies:
         if p not in seen:
             seen.add(p)
@@ -35,31 +35,48 @@ def load_proxies() -> list[str]:
     return out
 
 
+def apply_proxy_env(proxy: str | None) -> None:
+    """Set process env so curl_cffi / httpx / requests can pick proxy up."""
+    for k in ("HTTP_PROXY", "HTTPS_PROXY", "ALL_PROXY", "http_proxy", "https_proxy", "all_proxy"):
+        os.environ.pop(k, None)
+    if not proxy:
+        return
+    os.environ["HTTP_PROXY"] = proxy
+    os.environ["HTTPS_PROXY"] = proxy
+    os.environ["ALL_PROXY"] = proxy
+    os.environ["http_proxy"] = proxy
+    os.environ["https_proxy"] = proxy
+    os.environ["all_proxy"] = proxy
+
+
 def make_client(proxy: str | None = None):
+    """Build xhamster Client. Prefer env proxy; optionally configure base_api."""
+    apply_proxy_env(proxy)
+
     from xhamster_api import Client
 
     if not proxy:
         return Client()
 
+    # Try official base_api config path (versions differ; fail soft)
     try:
-        from base_api.modules.config import RuntimeConfig
-        from base_api.base import BaseCore
+        from base_api.modules.config import config as cfg  # type: ignore
 
-        cfg = RuntimeConfig()
         cfg.proxies = {"http": proxy, "https": proxy}
         cfg.trust_env = True
-        cfg.impersonation = os.environ.get("IMPERSONATE", "chrome")
-        return Client(core=BaseCore(config=cfg))
-    except Exception:
         try:
-            from base_api.modules.config import config as cfg
-            from base_api import BaseCore
+            cfg.impersonation = os.environ.get("IMPERSONATE", "chrome")
+        except Exception:
+            pass
+        try:
+            from base_api import BaseCore  # type: ignore
 
-            cfg.proxies = {"http": proxy, "https": proxy}
-            cfg.trust_env = True
             return Client(core=BaseCore(config=cfg))
         except Exception:
             return Client()
+    except Exception as e:
+        print(f"  (base_api config skipped: {type(e).__name__}: {e})")
+        return Client()
 
 
 async def process_url(url: str, proxy: str | None = None) -> dict:
@@ -69,6 +86,10 @@ async def process_url(url: str, proxy: str | None = None) -> dict:
     title = getattr(video, "title", None) or "unknown"
     max_res = getattr(video, "max_resolution", None)
     m3u8 = getattr(video, "m3u8_base_url", None)
+
+    # some versions use different attr names
+    if not m3u8:
+        m3u8 = getattr(video, "m3u8", None) or getattr(video, "hls", None)
 
     result = {
         "url": url,
@@ -81,21 +102,22 @@ async def process_url(url: str, proxy: str | None = None) -> dict:
     }
 
     if not m3u8:
+        # last resort: dump useful attrs for debugging
+        attrs = [a for a in dir(video) if not a.startswith("_")]
         result["error"] = "m3u8 not found"
+        result["debug_attrs"] = attrs[:40]
         return result
 
-    matches = re.findall(r"(\d+x\d+):(\d+p)", m3u8)
+    matches = re.findall(r"(\d+x\d+):(\d+p)", str(m3u8))
     for resolution, quality in matches:
-        link = m3u8.replace("_TPL_", quality)
-        result["qualities"].append({
-            "quality": quality,
-            "resolution": resolution,
-            "link": link,
-        })
+        link = str(m3u8).replace("_TPL_", quality)
+        result["qualities"].append(
+            {"quality": quality, "resolution": resolution, "link": link}
+        )
     return result
 
 
-def print_result(data: dict, index: int | None = None):
+def print_result(data: dict, index: int | None = None) -> None:
     prefix = f"[{index}] " if index is not None else ""
     print("=" * 55)
     print(f"{prefix}{data.get('title', 'unknown')}")
@@ -104,14 +126,11 @@ def print_result(data: dict, index: int | None = None):
     print(f"Max quality  : {data.get('max_resolution') or 'unknown'}")
     if data.get("proxy_used"):
         print(f"Proxy        : {data['proxy_used']}")
-
     if data.get("error"):
         print(f"ERROR        : {data['error']}")
         return
-
     if data.get("m3u8"):
         print(f"\nMaster m3u8:\n{data['m3u8']}")
-
     qualities = data.get("qualities") or []
     if qualities:
         print("\nQuality links:")
@@ -120,24 +139,20 @@ def print_result(data: dict, index: int | None = None):
             print(f"     {q['link']}")
     else:
         print("\nCould not split qualities; use master m3u8 above.")
-
     print("\nNote: HLS (m3u8). Prefer 1DM+.")
     print("=" * 55)
 
 
 async def try_with_proxies(url: str, proxies: list[str]) -> dict:
-    """Try direct first (optional), then each proxy until one works."""
-    chain = []
-    # On Actions, direct almost always fails — still try if no proxies
+    chain: list[str | None] = []
     if not proxies:
         chain = [None]
     else:
-        # skip direct on CI to save time unless ALLOW_DIRECT=1
         if os.environ.get("ALLOW_DIRECT", "0") == "1":
             chain.append(None)
         chain.extend(proxies)
 
-    last = None
+    last: dict | None = None
     for proxy in chain:
         label = proxy or "(direct)"
         print(f"\n>>> Trying {label} ...")
@@ -169,7 +184,7 @@ async def try_with_proxies(url: str, proxies: list[str]) -> dict:
     }
 
 
-async def main():
+async def main() -> None:
     raw = os.environ.get("URL") or os.environ.get("LINKS") or ""
     urls = [x.strip() for x in raw.splitlines() if x.strip()]
 
@@ -187,10 +202,10 @@ async def main():
 
     proxies = load_proxies()
     print(f"Loaded {len(proxies)} proxy(ies)")
-    for p in proxies[:10]:
+    for p in proxies[:15]:
         print(f"  - {p}")
-    if len(proxies) > 10:
-        print(f"  ... +{len(proxies) - 10} more")
+    if len(proxies) > 15:
+        print(f"  ... +{len(proxies) - 15} more")
 
     print(f"\nProcessing {len(urls)} link(s)...")
     results = []
