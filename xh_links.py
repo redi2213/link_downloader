@@ -1,8 +1,5 @@
 #!/usr/bin/env python3
-"""
-xHamster links: xhamster_api first, yt-dlp fallback.
-Proxy from PROXY env, working_proxies.txt, or local Xray socks.
-"""
+"""xHamster links: xhamster_api first, yt-dlp fallback. Output + Job Summary."""
 
 from __future__ import annotations
 
@@ -29,15 +26,11 @@ _compat_base_api()
 
 def load_proxies() -> list[str]:
     proxies: list[str] = []
-
-    # Local Xray started by workflow
     if os.path.isfile("/tmp/xray.pid"):
         proxies.append("socks5://127.0.0.1:10808")
-
     one = (os.environ.get("PROXY") or "").strip()
     if one:
         proxies.append(one)
-
     for path in ("working_proxies.txt", "proxies.txt"):
         if not os.path.isfile(path):
             continue
@@ -46,7 +39,6 @@ def load_proxies() -> list[str]:
                 line = line.strip()
                 if line and not line.startswith("#"):
                     proxies.append(line)
-
     seen: set[str] = set()
     out: list[str] = []
     for p in proxies:
@@ -57,16 +49,26 @@ def load_proxies() -> list[str]:
 
 
 def apply_proxy_env(proxy: str | None) -> None:
-    for k in ("HTTP_PROXY", "HTTPS_PROXY", "ALL_PROXY", "http_proxy", "https_proxy", "all_proxy"):
+    for k in (
+        "HTTP_PROXY",
+        "HTTPS_PROXY",
+        "ALL_PROXY",
+        "http_proxy",
+        "https_proxy",
+        "all_proxy",
+    ):
         os.environ.pop(k, None)
     if not proxy:
         return
-    os.environ["HTTP_PROXY"] = proxy
-    os.environ["HTTPS_PROXY"] = proxy
-    os.environ["ALL_PROXY"] = proxy
-    os.environ["http_proxy"] = proxy
-    os.environ["https_proxy"] = proxy
-    os.environ["all_proxy"] = proxy
+    for k in (
+        "HTTP_PROXY",
+        "HTTPS_PROXY",
+        "ALL_PROXY",
+        "http_proxy",
+        "https_proxy",
+        "all_proxy",
+    ):
+        os.environ[k] = proxy
 
 
 def make_client(proxy: str | None = None):
@@ -121,26 +123,23 @@ async def via_api(url: str, proxy: str | None) -> dict:
                 "quality": quality,
                 "resolution": resolution,
                 "link": str(m3u8).replace("_TPL_", quality),
+                "ext": "m3u8",
             }
         )
     return result
 
 
+def _h(q: dict) -> int:
+    m = re.search(r"(\d+)", str(q.get("quality") or ""))
+    return int(m.group(1)) if m else 0
+
+
 def via_ytdlp(url: str, proxy: str | None) -> dict:
-    """Fallback extractor."""
-    cmd = [
-        "yt-dlp",
-        "--no-warnings",
-        "-J",
-        "--no-download",
-        url,
-    ]
-    env = os.environ.copy()
+    cmd = ["yt-dlp", "--no-warnings", "-J", "--no-download", url]
     if proxy:
-        # yt-dlp accepts --proxy
         cmd[1:1] = ["--proxy", proxy]
     try:
-        p = subprocess.run(cmd, capture_output=True, text=True, timeout=120, env=env)
+        p = subprocess.run(cmd, capture_output=True, text=True, timeout=120)
     except Exception as e:
         return {
             "url": url,
@@ -152,7 +151,6 @@ def via_ytdlp(url: str, proxy: str | None) -> dict:
             "proxy_used": proxy,
             "method": "yt-dlp",
         }
-
     if p.returncode != 0:
         err = (p.stderr or p.stdout or "yt-dlp failed").strip().splitlines()[-1:]
         return {
@@ -165,7 +163,6 @@ def via_ytdlp(url: str, proxy: str | None) -> dict:
             "proxy_used": proxy,
             "method": "yt-dlp",
         }
-
     try:
         info = json.loads(p.stdout)
     except json.JSONDecodeError:
@@ -183,17 +180,15 @@ def via_ytdlp(url: str, proxy: str | None) -> dict:
     title = info.get("title") or "unknown"
     qualities = []
     m3u8 = None
-    formats = info.get("formats") or []
-    # prefer progressive http mp4, then m3u8
-    for f in formats:
+    for f in info.get("formats") or []:
         u = f.get("url") or ""
+        if not u:
+            continue
         ext = (f.get("ext") or "").lower()
         h = f.get("height")
         proto = (f.get("protocol") or "").lower()
         note = f.get("format_note") or f.get("format_id") or ""
-        if not u:
-            continue
-        if "m3u8" in proto or u.endswith(".m3u8") or "m3u8" in u:
+        if "m3u8" in proto or ".m3u8" in u:
             if not m3u8:
                 m3u8 = u
             label = f"{h}p" if h else str(note or "hls")
@@ -215,11 +210,10 @@ def via_ytdlp(url: str, proxy: str | None) -> dict:
                 }
             )
 
-    # de-dupe by quality keep first
     seen_q: set[str] = set()
     uniq = []
-    for q in sorted(qualities, key=lambda x: _h(x), reverse=True):
-        k = q["quality"]
+    for q in sorted(qualities, key=_h, reverse=True):
+        k = f"{q['quality']}|{q.get('ext')}"
         if k in seen_q:
             continue
         seen_q.add(k)
@@ -238,23 +232,16 @@ def via_ytdlp(url: str, proxy: str | None) -> dict:
     }
 
 
-def _h(q: dict) -> int:
-    m = re.search(r"(\d+)", str(q.get("quality") or ""))
-    return int(m.group(1)) if m else 0
-
-
 async def try_one(url: str, proxy: str | None) -> dict:
-    print(f"  [api] ...")
+    print("  [api] ...")
     try:
         data = await via_api(url, proxy)
-        if data.get("m3u8") or data.get("qualities"):
-            if not data.get("error"):
-                return data
+        if (data.get("m3u8") or data.get("qualities")) and not data.get("error"):
+            return data
         print(f"  [api] fail: {data.get('error')}")
     except Exception as e:
         print(f"  [api] exception: {type(e).__name__}: {e}")
-
-    print(f"  [yt-dlp] ...")
+    print("  [yt-dlp] ...")
     data = via_ytdlp(url, proxy)
     if data.get("error"):
         print(f"  [yt-dlp] fail: {data.get('error')}")
@@ -262,16 +249,10 @@ async def try_one(url: str, proxy: str | None) -> dict:
 
 
 async def try_with_proxies(url: str, proxies: list[str]) -> dict:
-    chain: list[str | None] = []
-    if proxies:
-        chain.extend(proxies)
-    else:
-        chain = [None]
-
+    chain: list[str | None] = list(proxies) if proxies else [None]
     last: dict | None = None
     for proxy in chain:
-        label = proxy or "(direct)"
-        print(f"\n>>> Trying {label}")
+        print(f"\n>>> Trying {proxy or '(direct)'}")
         data = await try_one(url, proxy)
         last = data
         if (data.get("qualities") or data.get("m3u8")) and not data.get("error"):
@@ -303,7 +284,9 @@ def print_result(data: dict, index: int | None = None) -> None:
     if data.get("m3u8"):
         print(f"\nMaster/HLS:\n{data['m3u8']}")
     for i, q in enumerate(data.get("qualities") or [], 1):
-        print(f"\n  {i}. [{q.get('quality')}] {q.get('resolution')} ({q.get('ext', '')})")
+        print(
+            f"\n  {i}. [{q.get('quality')}] {q.get('resolution')} ({q.get('ext', '')})"
+        )
         print(f"     {q['link']}")
     print("=" * 55)
 
@@ -315,7 +298,6 @@ def write_summary(results: list[dict]) -> None:
     lines: list[str] = ["# XHamster Links", ""]
     ok = 0
     all_links: list[str] = []
-
     for i, item in enumerate(results, 1):
         lines.append(f"## {i}. {item.get('title') or '(no title)'}")
         lines.append(f"- URL: `{item.get('url')}`")
@@ -326,40 +308,31 @@ def write_summary(results: list[dict]) -> None:
             lines.append(f"- **ERROR:** `{item['error']}`")
             lines.append("")
             continue
-
         ok += 1
-        lines.append("")
-        lines.append("| Quality | Type | ")
-        lines.append("|---------|------|")
         if item.get("m3u8"):
-            lines.append(f"| HLS master | m3u8 |")
-            all_links.append(f"# HLS master")
+            lines.append("- HLS:")
+            lines.append("```")
+            lines.append(str(item["m3u8"]))
+            lines.append("```")
+            all_links.append("# HLS")
             all_links.append(str(item["m3u8"]))
         for q in item.get("qualities") or []:
-            qn = q.get("quality") or "?"
-            ext = q.get("ext") or ""
-            lines.append(f"| {qn} | {ext} |")
-            all_links.append(f"# {qn} ({ext})")
+            lines.append(f"- **{q.get('quality')}** ({q.get('ext', '')})")
+            lines.append("```")
+            lines.append(q["link"])
+            lines.append("```")
+            all_links.append(f"# {q.get('quality')} ({q.get('ext', '')})")
             all_links.append(q["link"])
         lines.append("")
-
     lines.append("---")
     lines.append(f"**Success:** {ok}/{len(results)}")
     lines.append("")
-    lines.append("### All links (select the box → Copy)")
-    lines.append("GitHub Summary has no Copy button; use the code block below:")
+    lines.append("### All links (select box to copy)")
     lines.append("```")
-    if all_links:
-        lines.extend(all_links)
-    else:
-        lines.append("(no links)")
+    lines.extend(all_links if all_links else ["(no links)"])
     lines.append("```")
-    lines.append("")
-
     with open(path, "a", encoding="utf-8") as f:
-        f.write("
-".join(lines) + "
-")
+        f.write("\n".join(lines) + "\n")
 
 
 async def main() -> None:
@@ -367,7 +340,7 @@ async def main() -> None:
     urls = [x.strip() for x in raw.splitlines() if x.strip()]
     if not urls:
         try:
-            u = input("\nلینک ویدیو:\n> ").strip()
+            u = input("\nVideo URL:\n> ").strip()
             if u:
                 urls = [u]
         except EOFError:
@@ -390,15 +363,16 @@ async def main() -> None:
     with open("xh_links.json", "w", encoding="utf-8") as f:
         json.dump(results, f, ensure_ascii=False, indent=2)
 
-    txt = []
+    txt: list[str] = []
     for item in results:
         txt.append(f"# {item.get('title') or item['url']}")
         txt.append(f"# method: {item.get('method')} proxy: {item.get('proxy_used')}")
         if item.get("error"):
-            txt.append(f"# ERROR: {item['error']}\n")
+            txt.append(f"# ERROR: {item['error']}")
+            txt.append("")
             continue
         if item.get("m3u8"):
-            txt.append(item["m3u8"])
+            txt.append(str(item["m3u8"]))
         for q in item.get("qualities") or []:
             txt.append(q["link"])
         txt.append("")
