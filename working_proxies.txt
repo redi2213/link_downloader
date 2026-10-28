@@ -1,0 +1,3 @@
+# Auto-updated by Find Free Proxies workflow
+# Run: Actions → Find Free Proxies → Run workflow
+# Format: socks5://ip:port  or  http://ip:port
