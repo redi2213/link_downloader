@@ -2,6 +2,7 @@
 """
 xHamster quality links extractor.
 Uses working_proxies.txt from repo (or PROXY env).
+Writes human output + GitHub Step Summary (no zip needed).
 """
 
 from __future__ import annotations
@@ -13,7 +14,6 @@ import asyncio
 
 
 def _compat_base_api() -> None:
-    """Old xhamster_api imports setup_logger; new base_api renamed it to get_logger."""
     try:
         import base_api.base as b
 
@@ -152,8 +152,58 @@ def print_result(data: dict, index: int | None = None) -> None:
             print(f"     {q['link']}")
     else:
         print("\nCould not split qualities; use master m3u8 above.")
-    print("\nNote: HLS (m3u8). Prefer 1DM+.")
     print("=" * 55)
+
+
+def write_summary(results: list[dict]) -> None:
+    """GitHub Actions Job Summary — visible on the run page, no zip."""
+    path = os.environ.get("GITHUB_STEP_SUMMARY")
+    if not path:
+        return
+
+    lines: list[str] = []
+    lines.append("# XHamster Links")
+    lines.append("")
+
+    ok = 0
+    for i, item in enumerate(results, 1):
+        title = item.get("title") or "(no title)"
+        lines.append(f"## {i}. {title}")
+        lines.append(f"- URL: `{item.get('url')}`")
+        if item.get("proxy_used"):
+            lines.append(f"- Proxy: `{item['proxy_used']}`")
+        if item.get("error"):
+            lines.append(f"- **ERROR:** `{item['error']}`")
+            lines.append("")
+            continue
+        ok += 1
+        if item.get("m3u8"):
+            lines.append("- Master m3u8:")
+            lines.append("```")
+            lines.append(str(item["m3u8"]))
+            lines.append("```")
+        quals = item.get("qualities") or []
+        if quals:
+            lines.append("- Quality links:")
+            for q in quals:
+                lines.append(f"  - **{q['quality']}** ({q['resolution']})")
+                lines.append(f"    ```")
+                lines.append(f"    {q['link']}")
+                lines.append(f"    ```")
+        lines.append("")
+
+    lines.append("---")
+    lines.append(f"**Success:** {ok}/{len(results)}")
+    if ok == 0:
+        lines.append("")
+        lines.append(
+            "> Free public proxies are usually **datacenter** IPs. "
+            "xHamster often blocks them (same as GitHub Actions IPs). "
+            "For reliable results use **Termux on your phone** without proxy."
+        )
+
+    with open(path, "a", encoding="utf-8") as f:
+        f.write("\n".join(lines) + "\n")
 
 
 async def try_with_proxies(url: str, proxies: list[str]) -> dict:
@@ -217,8 +267,6 @@ async def main() -> None:
     print(f"Loaded {len(proxies)} proxy(ies)")
     for p in proxies[:15]:
         print(f"  - {p}")
-    if len(proxies) > 15:
-        print(f"  ... +{len(proxies) - 15} more")
 
     print(f"\nProcessing {len(urls)} link(s)...")
     results = []
@@ -232,21 +280,32 @@ async def main() -> None:
     with open("xh_links.json", "w", encoding="utf-8") as f:
         json.dump(results, f, ensure_ascii=False, indent=2)
 
-    with open("xh_links.txt", "w", encoding="utf-8") as f:
-        for item in results:
-            f.write(f"# {item.get('title') or item['url']}\n")
-            if item.get("proxy_used"):
-                f.write(f"# proxy: {item['proxy_used']}\n")
-            if item.get("error"):
-                f.write(f"# ERROR: {item['error']}\n\n")
-                continue
-            if item.get("m3u8"):
-                f.write(f"# master: {item['m3u8']}\n")
-            for q in item.get("qualities") or []:
-                f.write(f"{q['link']}\n")
-            f.write("\n")
+    txt_lines: list[str] = []
+    for item in results:
+        txt_lines.append(f"# {item.get('title') or item['url']}")
+        if item.get("proxy_used"):
+            txt_lines.append(f"# proxy: {item['proxy_used']}")
+        if item.get("error"):
+            txt_lines.append(f"# ERROR: {item['error']}")
+            txt_lines.append("")
+            continue
+        if item.get("m3u8"):
+            txt_lines.append(f"# master: {item['m3u8']}")
+        for q in item.get("qualities") or []:
+            txt_lines.append(q["link"])
+        txt_lines.append("")
 
-    print("Saved: xh_links.json  and  xh_links.txt")
+    text = "\n".join(txt_lines) + "\n"
+    with open("xh_links.txt", "w", encoding="utf-8") as f:
+        f.write(text)
+
+    write_summary(results)
+
+    # Always dump plain text at end of log for easy copy
+    print("\n" + "#" * 60)
+    print("# COPY BELOW (also in Job Summary on the run page)")
+    print("#" * 60)
+    print(text)
 
 
 if __name__ == "__main__":
