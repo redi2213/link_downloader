@@ -1,0 +1,55 @@
+name: Find Free Proxies
+
+on:
+  workflow_dispatch:
+    inputs:
+      needed:
+        description: "Stop after this many working proxies"
+        required: false
+        default: "5"
+        type: string
+      max_candidates:
+        description: "Max proxies to test from free lists"
+        required: false
+        default: "80"
+        type: string
+      xh_check:
+        description: "Also test opening xhamster.com (1=yes, 0=no)"
+        required: false
+        default: "0"
+        type: string
+
+jobs:
+  find:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install deps
+        run: |
+          pip install -U pip
+          pip install requests PySocks
+
+      - name: Find working free proxies
+        env:
+          NEEDED: ${{ inputs.needed }}
+          MAX_CANDIDATES: ${{ inputs.max_candidates }}
+          XH_CHECK: ${{ inputs.xh_check }}
+          PROXY_TIMEOUT: "8"
+          MAX_WORKERS: "20"
+        run: python find_proxies.py
+
+      - name: Upload proxy list
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: working-proxies
+          path: |
+            working_proxies.txt
+            working_proxies.json
+          if-no-files-found: warn
