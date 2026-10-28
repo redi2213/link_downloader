@@ -66,4 +66,5 @@ jobs:
           URL: ${{ inputs.url }}
           LINKS: ${{ inputs.links }}
           PROXY: ${{ inputs.proxy }}
+          V2RAY_CONFIG: ${{ inputs.v2ray_config }}
         run: python xh_links.py
