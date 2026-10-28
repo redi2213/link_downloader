@@ -12,7 +12,7 @@ on:
         required: false
         type: string
       proxy:
-        description: "Optional single proxy (socks5://ip:port or http://ip:port). Leave empty to use artifact from Find Free Proxies"
+        description: "Optional override proxy (leave empty to use working_proxies.txt from repo)"
         required: false
         type: string
 
@@ -33,27 +33,18 @@ jobs:
           pip install requests PySocks
           pip install "xhamster_api" || pip install "unofficial-api-for-xhamster"
 
-      # Try to pull latest working-proxies artifact from Find Free Proxies workflow
-      - name: Download latest free-proxy artifact
-        if: ${{ inputs.proxy == '' }}
-        continue-on-error: true
-        uses: dawidd6/action-download-artifact@v6
-        with:
-          workflow: find_proxies.yml
-          name: working-proxies
-          path: .
-          search_artifacts: true
-          workflow_conclusion: success
-          github_token: ${{ github.token }}
-
-      - name: Show proxy file
+      - name: Show proxies from repo
         run: |
           if [ -n "${{ inputs.proxy }}" ]; then
             echo "${{ inputs.proxy }}" > working_proxies.txt
-            echo "Using manual proxy input"
+            echo "Using manual proxy override"
           fi
-          echo "--- working_proxies.txt ---"
-          cat working_proxies.txt 2>/dev/null || echo "(no proxy file — will likely fail on GA IPs)"
+          echo "=== working_proxies.txt ==="
+          if [ -f working_proxies.txt ]; then
+            cat working_proxies.txt
+          else
+            echo "(file missing — run Find Free Proxies workflow first)"
+          fi
 
       - name: Extract quality links
         env:
@@ -70,4 +61,3 @@ jobs:
           path: |
             xh_links.json
             xh_links.txt
-            working_proxies.txt
