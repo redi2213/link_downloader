@@ -16,27 +16,14 @@ on:
         required: false
         type: string
       v2ray_config:
-        description: "Xray/V2Ray FULL JSON config (not vmess:// link). Local SOCKS 10808 auto-added."
+        description: "Xray/V2Ray FULL JSON config (optional)"
         required: false
         type: string
-      upload:
-        description: "Download video on this runner and upload to GitHub Release (true/false)"
-        required: false
-        default: "true"
-        type: string
-      quality:
-        description: "Preferred quality: best / 1080 / 720 / 480"
-        required: false
-        default: "best"
-        type: string
-
-permissions:
-  contents: write
 
 jobs:
   extract:
     runs-on: ubuntu-latest
-    timeout-minutes: 360
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
 
@@ -72,7 +59,7 @@ jobs:
             echo "${{ inputs.proxy }}" > working_proxies.txt
           fi
           echo "=== working_proxies.txt ==="
-          cat working_proxies.txt 2>/dev/null || echo "(none / only xray if started)"
+          cat working_proxies.txt 2>/dev/null || echo "(none)"
 
       - name: Extract quality links
         env:
@@ -80,15 +67,3 @@ jobs:
           LINKS: ${{ inputs.links }}
           PROXY: ${{ inputs.proxy }}
         run: python xh_links.py
-
-      - name: Download + GitHub Release
-        if: ${{ inputs.upload == 'true' || inputs.upload == 'True' || inputs.upload == '1' }}
-        env:
-          UPLOAD: "true"
-          QUALITY: ${{ inputs.quality }}
-          GH_TOKEN: ${{ github.token }}
-          GITHUB_TOKEN: ${{ github.token }}
-          GITHUB_REPOSITORY: ${{ github.repository }}
-          GITHUB_RUN_ID: ${{ github.run_id }}
-          PROXY: ${{ inputs.proxy }}
-        run: python download_release.py
