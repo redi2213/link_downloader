@@ -64,6 +64,7 @@ jobs:
         env:
           URL: ${{ inputs.url }}
           PROXY: ${{ inputs.proxy }}
+          V2RAY_CONFIG: ${{ inputs.v2ray_config }}
         run: python xh_links.py
 
       - name: Download HLS + GitHub Release
