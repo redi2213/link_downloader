@@ -12,14 +12,14 @@ on:
         required: false
         type: string
       proxy:
-        description: "Optional override proxy (leave empty to use working_proxies.txt from repo)"
+        description: "Optional override proxy (leave empty to use working_proxies.txt)"
         required: false
         type: string
 
 jobs:
   extract:
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 25
     steps:
       - uses: actions/checkout@v4
 
@@ -29,9 +29,12 @@ jobs:
 
       - name: Install deps
         run: |
-          pip install -U pip
-          pip install requests PySocks
-          pip install "xhamster_api" || pip install "unofficial-api-for-xhamster"
+          pip install -U pip setuptools wheel
+          # install network stack first, then API (avoids broken base_api extras)
+          pip install "curl_cffi" "requests" "PySocks" "beautifulsoup4" "selectolax" "chompjs" "m3u8"
+          pip install "eaf_base_api" || pip install "base-api" || true
+          pip install -U "xhamster_api" || pip install -U "unofficial-api-for-xhamster"
+          python -c "from xhamster_api import Client; print('xhamster_api OK', Client)"
 
       - name: Show proxies from repo
         run: |
@@ -43,7 +46,7 @@ jobs:
           if [ -f working_proxies.txt ]; then
             cat working_proxies.txt
           else
-            echo "(file missing — run Find Free Proxies workflow first)"
+            echo "(missing — run Find Free Proxies first)"
           fi
 
       - name: Extract quality links
