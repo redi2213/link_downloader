@@ -4,20 +4,20 @@ on:
   workflow_dispatch:
     inputs:
       url:
-        description: "xHamster video URL"
+        description: "xHamster video page URL"
         required: true
         type: string
       quality:
         description: "best / 1080 / 720 / 480"
         required: false
-        default: "best"
+        default: "720"
         type: string
       proxy:
-        description: "Optional proxy override"
+        description: "Proxy only for extracting page (not for CDN download)"
         required: false
         type: string
       v2ray_config:
-        description: "Xray/V2Ray FULL JSON config (optional)"
+        description: "Optional Xray JSON for extract step only"
         required: false
         type: string
 
@@ -27,7 +27,7 @@ permissions:
 jobs:
   download:
     runs-on: ubuntu-latest
-    timeout-minutes: 360
+    timeout-minutes: 120
     steps:
       - uses: actions/checkout@v4
 
@@ -35,22 +35,25 @@ jobs:
         with:
           python-version: "3.12"
 
-      - name: Install deps
+      - name: Install deps (yt-dlp + ffmpeg like Upload File)
         run: |
           set -e
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq ffmpeg
           pip install -U pip setuptools wheel
           pip install curl_cffi requests PySocks
           pip uninstall -y xhamster_api unofficial-api-for-xhamster 2>/dev/null || true
           pip install -U unofficial-api-for-xhamster
           pip install -U yt-dlp
           yt-dlp --version
+          ffmpeg -version | head -1
 
-      - name: Setup Xray (optional)
+      - name: Setup Xray (optional, extract only)
         env:
           V2RAY_CONFIG: ${{ inputs.v2ray_config }}
         run: bash setup_xray.sh
 
-      - name: Prepare proxies
+      - name: Prepare proxies for extract
         run: |
           if [ -n "${{ inputs.proxy }}" ]; then
             echo "${{ inputs.proxy }}" > working_proxies.txt
@@ -63,7 +66,7 @@ jobs:
           PROXY: ${{ inputs.proxy }}
         run: python xh_links.py
 
-      - name: Download + GitHub Release
+      - name: Download HLS + GitHub Release
         env:
           UPLOAD: "true"
           QUALITY: ${{ inputs.quality }}
@@ -71,5 +74,4 @@ jobs:
           GITHUB_TOKEN: ${{ github.token }}
           GITHUB_REPOSITORY: ${{ github.repository }}
           GITHUB_RUN_ID: ${{ github.run_id }}
-          PROXY: ${{ inputs.proxy }}
         run: python download_release.py
