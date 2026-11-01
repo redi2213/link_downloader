@@ -1,38 +1,58 @@
 [
   {
-    "proxy": "socks5://101.36.104.239:10808",
-    "latency_ms": 1406,
+    "proxy": "socks5://103.100.158.115:10809",
+    "latency_ms": 1268,
     "ok": true,
-    "body_snip": "{\n  \"origin\": \"101.36.104.239\"\n}\n"
+    "body_snip": "{\n  \"origin\": \"103.100.158.115\"\n}\n",
+    "xh_ok": true
   },
   {
-    "proxy": "socks5://103.100.158.115:10809",
-    "latency_ms": 1721,
+    "proxy": "socks5://101.36.104.239:10808",
+    "latency_ms": 1474,
     "ok": true,
-    "body_snip": "{\n  \"origin\": \"103.100.158.115\"\n}\n"
+    "body_snip": "{\n  \"origin\": \"101.36.104.239\"\n}\n",
+    "xh_ok": true
   },
   {
     "proxy": "socks5://101.36.104.46:10808",
-    "latency_ms": 3320,
+    "latency_ms": 2109,
     "ok": true,
-    "body_snip": "{\n  \"origin\": \"101.36.104.46\"\n}\n"
+    "body_snip": "{\n  \"origin\": \"101.36.104.46\"\n}\n",
+    "xh_ok": false
   },
   {
-    "proxy": "socks5://102.0.14.42:1080",
-    "latency_ms": 3581,
+    "proxy": "socks5://103.13.192.77:1080",
+    "latency_ms": 2871,
     "ok": true,
-    "body_snip": "{\n  \"origin\": \"102.0.14.42\"\n}\n"
+    "body_snip": "{\n  \"origin\": \"103.13.192.32\"\n}\n",
+    "xh_ok": false
   },
   {
-    "proxy": "socks5://101.36.112.205:1081",
-    "latency_ms": 4388,
+    "proxy": "socks5://103.157.78.22:8199",
+    "latency_ms": 3358,
     "ok": true,
-    "body_snip": "{\n  \"origin\": \"101.36.112.205\"\n}\n"
+    "body_snip": "{\n  \"origin\": \"103.157.78.22\"\n}\n",
+    "xh_ok": true
+  },
+  {
+    "proxy": "socks5://102.36.127.231:1080",
+    "latency_ms": 4549,
+    "ok": true,
+    "body_snip": "{\n  \"origin\": \"102.36.127.7\"\n}\n",
+    "xh_ok": false
+  },
+  {
+    "proxy": "socks5://103.119.60.219:1080",
+    "latency_ms": 9411,
+    "ok": true,
+    "body_snip": "{\n  \"origin\": \"103.119.60.219\"\n}\n",
+    "xh_ok": true
   },
   {
     "proxy": "socks5://101.53.238.37:1080",
-    "latency_ms": 5256,
+    "latency_ms": 11984,
     "ok": true,
-    "body_snip": "{\n  \"origin\": \"149.40.242.118\"\n}\n"
+    "body_snip": "{\n  \"origin\": \"149.40.242.118\"\n}\n",
+    "xh_ok": false
   }
 ]
